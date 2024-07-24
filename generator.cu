@@ -1,14 +1,9 @@
-#include <boost/program_options.hpp>
-#include <driver_types.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <infiniband/verbs.h>
-#include <unistd.h>
-#include <vector>
-
 
 #include "include_all.h"
 #include "utils.h"
+#include "network.h"
+#include "rdma_shim.cuh"
+#define BUFFER_SIZE 100'000'000
 
 
 // #include "rdma.h"
@@ -88,75 +83,26 @@ int arg_parse(int argc, char **argv, po::variables_map &vm) {
 }
 
 
-// int do_standard_write(ibv_qp *qp, int imm, void *buffer, int size, int lkey,
-//                       bool signaled = false) {
-//     if (buffer != 0 && size != 0)
-//         LOG_IF(INFO, !quiet) << "Standard write with imm. " << std::hex << imm;
-//     else
-//         LOG_IF(INFO, !quiet) << "Standard empty write with imm. " << std::hex << imm;
-//     return rdma_write_imm_standard(qp,
-//                                    (void *)buffer,     // buffer
-//                                    size,               // size
-//                                    lkey,               // lk
-//                                    0xbbaabbaa,         // rk
-//                                    (void *)0xffff1234, // raddr
-//                                    imm,                // imm
-//                                    signaled);
-// }
 
-// int do_crafted_write(struct rdma_shim_data *data, int imm, void *buffer,
-//                      int size, int lkey, bool signaled = false) {
-//     if (buffer != 0 && size != 0)
-//         LOG_IF(INFO, !quiet) << "Crafted write with imm. " << std::hex << imm;
-//     else
-//         LOG_IF(INFO, !quiet) << "Crafted empty write with imm. " << std::hex << imm;
-//     rdma_write_with_imm_cu(data,
-//                            (void *)buffer,     // buffer
-//                            size,               // size
-//                            lkey,               // lk
-//                            0xbbaabbaa,         // rk
-//                            (void *)0xffff1234, // raddr
-//                            imm,                // imm
-//                            signaled);
-//     return 0;
-// }
+__device__ uint64_t gpu_start_time = 0;
+__device__ uint64_t gpu_exec_time_sum = 0;
+__device__ uint64_t gpu_cqe_time_sum = 0;
+__device__ uint64_t gpu_exec_count = 0;
+__device__ uint64_t gpu_cqe_count = 0;
 
-// int do_gpu_crafted_write(struct rdma_shim_data *data, int imm, void *buffer,
-//                          int size, int lkey, bool signaled = false) {
-//     if (buffer != 0 && size != 0)
-//         LOG_IF(INFO, !quiet) << "GPU Crafted write with imm. " << std::hex << imm;
-//     else
-//         LOG_IF(INFO, !quiet) << "GPU Crafted empty write with imm. " << std::hex << imm;
-//     rdma_write_with_imm_kernel<<<1, 1, 1>>>(data,
-//                                             (void *)buffer,     // buffer
-//                                             size,               // size
-//                                             lkey,               // lk
-//                                             0xbbaabbaa,         // rk
-//                                             (void *)0xffff1234, // raddr
-//                                             imm,                // imm
-//                                             signaled);
-//     return 0;
-// }
-
-// __device__ uint64_t gpu_start_time = 0;
-// __device__ uint64_t gpu_exec_time_sum = 0;
-// __device__ uint64_t gpu_cqe_time_sum = 0;
-// __device__ uint64_t gpu_exec_count = 0;
-// __device__ uint64_t gpu_cqe_count = 0;
-
-// __global__ void set_start_time() { gpu_start_time = clock(); }
-// __global__ void sum_time_cqe() {
-//     gpu_cqe_time_sum += (clock() - gpu_start_time); 
-//     gpu_cqe_count++;
-// }
-// __global__ void sum_time() {
-//     gpu_exec_time_sum += (clock() - gpu_start_time); 
-//     gpu_exec_count++;
-// }
-// __global__ void sum_time_multi(int batch) {
-//     gpu_exec_time_sum += (clock() - gpu_start_time); 
-//     gpu_exec_count+=batch;
-// }
+__global__ void set_start_time() { gpu_start_time = clock(); }
+__global__ void sum_time_cqe() {
+    gpu_cqe_time_sum += (clock() - gpu_start_time); 
+    gpu_cqe_count++;
+}
+__global__ void sum_time() {
+    gpu_exec_time_sum += (clock() - gpu_start_time); 
+    gpu_exec_count++;
+}
+__global__ void sum_time_multi(int batch) {
+    gpu_exec_time_sum += (clock() - gpu_start_time); 
+    gpu_exec_count+=batch;
+}
 
 void on_exit(int signal)
 {
@@ -219,260 +165,259 @@ int main(int argc, char **argv) {
     int ret = arg_parse(argc, argv, vm);
     if (ret) return 1;
 
-    // cudaStream_t stream;
+    cudaStream_t stream;
 
-    // bool use_gpu_rdma = (mode == "gpu");
-    // bool use_gpu = (mode == "gpu" || mode_cqe == "gpu" || data_location == "cuda" || buffer_location != "host");
+    bool use_gpu_rdma = (mode == "gpu");
+    bool use_gpu = (mode == "gpu" || mode_cqe == "gpu" || data_location == "cuda" || buffer_location != "host");
 
-    // if (use_gpu) {
-    //     cudaSetDevice(0);
-    //     cudaStreamCreate(&stream);
-    // }
+    if (use_gpu) {
+        cudaSetDevice(0);
+        cudaStreamCreate(&stream);
+    }
 
-    // // We pre-alloc an area of memory, so that we have to register only that!
-    // // And we may even alloc it in CUDA
-    // size_t driver_data_size = 1 * 1024 * 1024 * 1204;
-    // void *driver_data = nullptr;
+    // We pre-alloc an area of memory, so that we have to register only that!
+    // And we may even alloc it in CUDA
+    size_t driver_data_size = 1 * 1024 * 1024 * 1204;
+    void *driver_data = nullptr;
 
-    // // Test flags
-    // if (data_location == "cudaMallocHostZ")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,0));
-    // if (data_location == "cudaMallocHostP")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocPortable));
-    // if (data_location == "cudaMallocHostM")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocMapped));
-    // if (data_location == "cudaMallocHostPM")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocPortable|cudaHostAllocMapped));
-    // if (data_location == "cudaMallocHostW")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocWriteCombined));
-    // if (data_location == "cudaMallocHostPW")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocPortable|cudaHostAllocWriteCombined));
-    // if (data_location == "cudaMallocHostMW")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocMapped|cudaHostAllocWriteCombined));
-    // if (data_location == "cudaMallocHostPMW")
-    //     CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                 cudaHostAllocMapped|cudaHostAllocPortable|cudaHostAllocWriteCombined));
+    // Test flags
+    if (data_location == "cudaMallocHostZ")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,0));
+    if (data_location == "cudaMallocHostP")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocPortable));
+    if (data_location == "cudaMallocHostM")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocMapped));
+    if (data_location == "cudaMallocHostPM")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocPortable|cudaHostAllocMapped));
+    if (data_location == "cudaMallocHostW")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocWriteCombined));
+    if (data_location == "cudaMallocHostPW")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocPortable|cudaHostAllocWriteCombined));
+    if (data_location == "cudaMallocHostMW")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocMapped|cudaHostAllocWriteCombined));
+    if (data_location == "cudaMallocHostPMW")
+        CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                    cudaHostAllocMapped|cudaHostAllocPortable|cudaHostAllocWriteCombined));
 
-    // if (driver_data == nullptr){
-    //     if (data_location == "cudaMallocHost")
-    //     {
-    //         LOG(INFO) << "driver data is being allocated through cudaMallocHost";
-    //         CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
-    //                     cudaHostAllocPortable | cudaHostAllocMapped |
-    //                     cudaHostAllocWriteCombined));
-    //     }
-    //     if (data_location == "cudaMallocManaged")
-    //     {
-    //         LOG(INFO) << "driver data is being allocated through cudaManaged";
-    //         CUDA_CALL(cudaMallocManaged(&driver_data, driver_data_size));
-    //     }
-    //     else
-    //     {
-    //         if (data_location != "host")
-    //             LOG(WARNING) << "Unsupported data_location " << data_location << ": going for the default";
-    //         LOG(INFO) << "driver data is being allocated through malloc";
-    //         driver_data = malloc(driver_data_size);
+    if (driver_data == nullptr){
+        if (data_location == "cudaMallocHost")
+        {
+            LOG(INFO) << "driver data is being allocated through cudaMallocHost";
+            CUDA_CALL(cudaMallocHost(&driver_data, driver_data_size,
+                        cudaHostAllocPortable | cudaHostAllocMapped |
+                        cudaHostAllocWriteCombined));
+        }
+        if (data_location == "cudaMallocManaged")
+        {
+            LOG(INFO) << "driver data is being allocated through cudaManaged";
+            CUDA_CALL(cudaMallocManaged(&driver_data, driver_data_size));
+        }
+        else
+        {
+            if (data_location != "host")
+                LOG(WARNING) << "Unsupported data_location " << data_location << ": going for the default";
+            LOG(INFO) << "driver data is being allocated through malloc";
+            driver_data = malloc(driver_data_size);
 
-    //     }
-    // }
+        }
+    }
 
-    // // Tell rdma-core to use our custom allocators
-    // setup_custom_allocs(driver_data, driver_data_size);
+    // Tell rdma-core to use our custom allocators
+    setup_custom_allocs(driver_data, driver_data_size);
 
-    // // Init rdma
-    // std::vector<std::string> some_ips(
-    //     {"192.168.128.1", "192.168.129.1", "192.168.130.1", "192.168.134.1", "192.168.200.34"});
-    // if (local_address != "")
-    // {
-    //     some_ips.clear();
-    //     some_ips.push_back(local_address);
-    // }
-    // ibv_qp * qp;
-    // ibv_pd * pd = nullptr;
-    // CHECK(init_rdma(&qp, &pd, some_ips, remote_address) == 0) << "error while initializing RDMA stack!";
+    // Init rdma
+    std::vector<std::string> some_ips(
+        {"192.168.128.1", "192.168.129.1", "192.168.130.1", "192.168.134.1", "192.168.200.34"});
+    if (local_address != "")
+    {
+        some_ips.clear();
+        some_ips.push_back(local_address);
+    }
+    ibv_qp * qp;
+    ibv_pd * pd = nullptr;
+    CHECK(init_rdma(&qp, &pd, some_ips, remote_address) == 0) << "error while initializing RDMA stack!";
 
-    // // Memory stuff
-    // uint8_t *gpu_buffer;
-    // if (buffer_location == "host")
-    // {
-    //     unsigned int flag = 1;
-    //     gpu_buffer = (uint8_t *)malloc(BUFFER_SIZE);
-    //     ret = cuPointerSetAttribute(&flag, CU_POINTER_ATTRIBUTE_SYNC_MEMOPS,
-    //                                 (CUdeviceptr)gpu_buffer);
-    // }
-    // else
-    //     {
-    //     CUDA_CALL(cudaMalloc(&gpu_buffer, BUFFER_SIZE));
-    // }
-    // unsigned int flag = 1;
-    // CHECK(gpu_buffer != nullptr) << "error while allocating memory";
+    // Memory stuff
+    uint8_t *gpu_buffer;
+    if (buffer_location == "host")
+    {
+        unsigned int flag = 1;
+        gpu_buffer = (uint8_t *)malloc(BUFFER_SIZE);
+        ret = cuPointerSetAttribute(&flag, CU_POINTER_ATTRIBUTE_SYNC_MEMOPS,
+                                    (CUdeviceptr)gpu_buffer);
+    }
+    else
+        {
+        CUDA_CALL(cudaMalloc(&gpu_buffer, BUFFER_SIZE));
+    }
+    CHECK(gpu_buffer != nullptr) << "error while allocating memory";
 
-    // auto mr = ibv_reg_mr(qp->pd, gpu_buffer, BUFFER_SIZE,
-    //                      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
-    // CHECK(mr) << "Error while registering memory";
+    auto mr = ibv_reg_mr(qp->pd, gpu_buffer, BUFFER_SIZE,
+                         IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    CHECK(mr) << "Error while registering memory";
 
-    // struct rdma_shim_data *data = (struct rdma_shim_data *)rdma_shim_malloc(
-    //     sizeof(struct rdma_shim_data));
+    struct rdma_shim_data *data = (struct rdma_shim_data *)rdma_shim_malloc(
+        sizeof(struct rdma_shim_data));
 
-    // // --- Register memory
-    // void *l, *h;
-    // uint64_t total = prepare_rdma(qp, data, &l, &h);
+    // --- Register memory
+    void *l, *h;
+    uint64_t total = prepare_rdma(qp, data, &l, &h);
 
-    // if (use_gpu) {
-    //     if (data_location == "host")
-    //         register_cuda_driver_data(driver_data, driver_data_size);
-    //     register_cuda_areas(data);
-    //     CUDA_CALL(cudaDeviceSynchronize());
-    // }
+    if (use_gpu) {
+        if (data_location == "host")
+            register_cuda_driver_data(driver_data, driver_data_size);
+        register_cuda_areas(data);
+        CUDA_CALL(cudaDeviceSynchronize());
+    }
 
     // // do_standard_write(qp, 0xaa0011, nullptr,0, mr->lkey);
 
-    // ibv_wc wc;
+    ibv_wc wc;
 
-    // uint64_t total_pkts = 0;
-    // uint64_t start;
-    // uint64_t t;
+    uint64_t total_pkts = 0;
+    uint64_t start;
+    uint64_t t;
 
-    // if (gpu_batch == 1)
-    // {
-    //     for (uint64_t i = 0; (i < n || n == 0) && !stop; i++) {
-    //         if (quiet)
-    //         {
-    //             if ((i % 10000) == 0)
-    //                 LOG(INFO) << i;
-    //         }
-    //         else
-    //             LOG(INFO) << i;
+    if (gpu_batch == 1)
+    {
+        for (uint64_t i = 0; (i < n || n == 0) && !stop; i++) {
+            if (quiet)
+            {
+                if ((i % 10000) == 0)
+                    LOG(INFO) << i;
+            }
+            else
+                LOG(INFO) << i;
 
-    //         rate_limiter(total_pkts, true);
-    //         really_now(&t);
+            rate_limiter(total_pkts, true);
+            really_now(&t);
 
 
-    //         if ((i % batch) == 0 && i != 0) {
-    //             start = 0;
-    //             if (mode_cqe == "standard")
-    //                 poll_single_cq_standard(qp->send_cq, &wc);
-    //             else if (mode_cqe == "gpu")
-    //             {
+            if ((i % batch) == 0 && i != 0) {
+                start = 0;
+                if (mode_cqe == "standard")
+                    poll_single_cq_standard(qp->send_cq, &wc);
+                else if (mode_cqe == "gpu")
+                {
 
-    //                 set_start_time<<<1,1>>>();
-    //                 consume_cqe_kernel<<<1, 1, 1>>>(data);
-    //                 sum_time_cqe<<<1,1>>>();
-    //             }
-    //             else
-    //                 consume_send_cq(data);
-    //             really_now(&t);
-    //             cqe_time+=(t-start);
-    //             cqe_count++;
-    //         }
-    //         really_now(&start);
-    //         if (mode == "standard")
-    //             ret = do_standard_write(qp, 0xff | (i << 16), gpu_buffer,
-    //                                     write_size, mr->lkey, (i % batch) == 0);
-    //         else if (mode == "gpu")
-    //         {
-    //             set_start_time<<<1,1>>>();
-    //             ret = do_gpu_crafted_write(data, 0xff | (i << 16), gpu_buffer,
-    //                                        write_size, mr->lkey, (i % batch) == 0);
-    //             sum_time<<<1,1>>>();
-    //         }
-    //         else
-    //             ret = do_crafted_write(data, 0xff | (i << 16), gpu_buffer,
-    //                                    write_size, mr->lkey, (i % batch) == 0);
-    //         really_now(&t);
-    //         send_time+=(t - start);
-    //         total_pkts++;
-    //         if (sleep_us >0)
-    //             usleep(sleep_us);
-    //         if (ret != 0)
-    //         {
-    //             LOG(WARNING) << "Error: verb returned " << ret;
-    //             errors++;
-    //             if (errors > max_errors)
-    //             {
-    //                 LOG(ERROR) << "Too many errors!";
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
-    // else 
-    // {
-    //     if (mode != "gpu" || mode_cqe != "gpu")
-    //         LOG(FATAL) << "This combination of parameters is not valid!";
+                    set_start_time<<<1,1>>>();
+                    consume_cqe_kernel<<<1, 1, 1>>>(data);
+                    sum_time_cqe<<<1,1>>>();
+                }
+                else
+                    consume_send_cq(data);
+                really_now(&t);
+                cqe_time+=(t-start);
+                cqe_count++;
+            }
+            really_now(&start);
+            if (mode == "standard")
+                ret = do_standard_write(qp, 0xff | (i << 16), gpu_buffer,
+                                        write_size, mr->lkey, (i % batch) == 0, quiet);
+            else if (mode == "gpu")
+            {
+                set_start_time<<<1,1>>>();
+                ret = do_gpu_crafted_write(data, 0xff | (i << 16), gpu_buffer,
+                                           write_size, mr->lkey, (i % batch) == 0, quiet);
+                sum_time<<<1,1>>>();
+            }
+            else
+                ret = do_crafted_write(data, 0xff | (i << 16), gpu_buffer,
+                                       write_size, mr->lkey, (i % batch) == 0, quiet);
+            really_now(&t);
+            send_time+=(t - start);
+            total_pkts++;
+            if (sleep_us >0)
+                usleep(sleep_us);
+            if (ret != 0)
+            {
+                LOG(WARNING) << "Error: verb returned " << ret;
+                errors++;
+                if (errors > max_errors)
+                {
+                    LOG(ERROR) << "Too many errors!";
+                    break;
+                }
+            }
+        }
+    }
+    else 
+    {
+        if (mode != "gpu" || mode_cqe != "gpu")
+            LOG(FATAL) << "This combination of parameters is not valid!";
 
-    //     for(uint64_t i = 0; i< n && !stop; i+= gpu_batch)
-    //     {
-    //         if (!quiet) // || i%1024 == 0)
-    //             LOG(INFO) << "Posting " << gpu_batch << " requests";
-    //         set_start_time<<<1,1>>>();
-    //         rdma_write_with_imm_kernel_multiple<<<1, 1, 1>>>(data,
-    //                                         (void *)mr->addr,     // buffer
-    //                                         write_size,               // size
-    //                                         mr->lkey,               // lk
-    //                                         0xbbaabbaa,         // rk
-    //                                         (void *)0xffff1234, // raddr
-    //                                         i,
-    //                                         gpu_batch,
-    //                                         batch);
-    //         sum_time_multi<<<1,1>>>(gpu_batch);
-    //         total_pkts+=gpu_batch;
-    //         rate_limiter(total_pkts, true);
-    //     }
-    // }
+        for(uint64_t i = 0; i< n && !stop; i+= gpu_batch)
+        {
+            if (!quiet) // || i%1024 == 0)
+                LOG(INFO) << "Posting " << gpu_batch << " requests";
+            set_start_time<<<1,1>>>();
+            rdma_write_with_imm_kernel_multiple<<<1, 1, 1>>>(data,
+                                            (void *)mr->addr,     // buffer
+                                            write_size,               // size
+                                            mr->lkey,               // lk
+                                            0xbbaabbaa,         // rk
+                                            (void *)0xffff1234, // raddr
+                                            i,
+                                            gpu_batch,
+                                            batch);
+            sum_time_multi<<<1,1>>>(gpu_batch);
+            total_pkts+=gpu_batch;
+            rate_limiter(total_pkts, true);
+        }
+    }
 
-    // if (use_gpu) CUDA_CALL(cudaDeviceSynchronize());
-    // if (mode == "gpu")
-    // {
-    //     cudaDeviceProp prop;
-    //     CUDA_CALL(cudaGetDeviceProperties(&prop, 0));
-    //     printf("RESULT-CUDA_CLOCK %f\n", prop.clockRate/1e3);
+    if (use_gpu) CUDA_CALL(cudaDeviceSynchronize());
+    if (mode == "gpu")
+    {
+        cudaDeviceProp prop;
+        CUDA_CALL(cudaGetDeviceProperties(&prop, 0));
+        printf("RESULT-CUDA_CLOCK %f\n", prop.clockRate/1e3);
 
-    //     uint64_t send_time_sum;
-    //     uint64_t send_count;
+        uint64_t send_time_sum;
+        uint64_t send_count;
 
-    //     CUDA_CALL(cudaMemcpyFromSymbol(&send_time_sum, gpu_exec_time_sum, sizeof(send_time_sum), 0, cudaMemcpyDeviceToHost));
-    //     CUDA_CALL(cudaMemcpyFromSymbol(&send_count, gpu_exec_count, sizeof(send_count), 0, cudaMemcpyDeviceToHost));
-    //     // LOG(INFO) << "SUM " << send_time_sum;
-    //     // LOG(INFO) << "COUNT " << send_count;
-    //     // LOG(INFO) << "SO  " <<send_time_sum << "/ (1e-6 * " << send_count<< " * " << prop.clockRate;
+        CUDA_CALL(cudaMemcpyFromSymbol(&send_time_sum, gpu_exec_time_sum, sizeof(send_time_sum), 0, cudaMemcpyDeviceToHost));
+        CUDA_CALL(cudaMemcpyFromSymbol(&send_count, gpu_exec_count, sizeof(send_count), 0, cudaMemcpyDeviceToHost));
+        // LOG(INFO) << "SUM " << send_time_sum;
+        // LOG(INFO) << "COUNT " << send_count;
+        // LOG(INFO) << "SO  " <<send_time_sum << "/ (1e-6 * " << send_count<< " * " << prop.clockRate;
 
-    //     double send_time_gpu_avg = send_time_sum / (1e-6 * send_count * prop.clockRate);
-    //     printf("RESULT-AVG_SEND %f\n", send_time_gpu_avg);
-    // }
-    // else
-    // {
-    //     printf("RESULT-AVG_SEND %f\n", send_time /(double) n);
-    // }
+        double send_time_gpu_avg = send_time_sum / (1e-6 * send_count * prop.clockRate);
+        printf("RESULT-AVG_SEND %f\n", send_time_gpu_avg);
+    }
+    else
+    {
+        printf("RESULT-AVG_SEND %f\n", send_time /(double) n);
+    }
 
-    // if (mode_cqe == "gpu")
-    // {
-    //     cudaDeviceProp prop;
-    //     CUDA_CALL(cudaGetDeviceProperties(&prop, 0));
-    //     printf("RESULT-CUDA_CLOCK %f\n", prop.clockRate/1e3);
+    if (mode_cqe == "gpu")
+    {
+        cudaDeviceProp prop;
+        CUDA_CALL(cudaGetDeviceProperties(&prop, 0));
+        printf("RESULT-CUDA_CLOCK %f\n", prop.clockRate/1e3);
 
-    //     uint64_t cqe_time_sum;
-    //     uint64_t cqe_count;
+        uint64_t cqe_time_sum;
+        uint64_t cqe_count;
 
-    //     CUDA_CALL(cudaMemcpyFromSymbol(&cqe_time_sum, gpu_cqe_time_sum, sizeof(cqe_time_sum), 0, cudaMemcpyDeviceToHost));
-    //     CUDA_CALL(cudaMemcpyFromSymbol(&cqe_count, gpu_cqe_count, sizeof(cqe_count), 0, cudaMemcpyDeviceToHost));
-    //     CUDA_CALL(cudaDeviceSynchronize());
+        CUDA_CALL(cudaMemcpyFromSymbol(&cqe_time_sum, gpu_cqe_time_sum, sizeof(cqe_time_sum), 0, cudaMemcpyDeviceToHost));
+        CUDA_CALL(cudaMemcpyFromSymbol(&cqe_count, gpu_cqe_count, sizeof(cqe_count), 0, cudaMemcpyDeviceToHost));
+        CUDA_CALL(cudaDeviceSynchronize());
 
-    //     double cqe_time_gpu_avg = cqe_time_sum / (1e-6 * cqe_count * prop.clockRate);
-    //     printf("RESULT-AVG_CQE %f\n", cqe_time_gpu_avg);
-    // }
-    // else
-    // {
-    //     printf("RESULT-AVG_CQE %f\n", cqe_time /(double) cqe_time);
-    // }
+        double cqe_time_gpu_avg = cqe_time_sum / (1e-6 * cqe_count * prop.clockRate);
+        printf("RESULT-AVG_CQE %f\n", cqe_time_gpu_avg);
+    }
+    else
+    {
+        printf("RESULT-AVG_CQE %f\n", cqe_time /(double) cqe_time);
+    }
 
-    // printf("RESULT-RUNTIME %li\n", now() - start);
+    printf("RESULT-RUNTIME %li\n", now() - start);
     LOG(INFO) << "Hejdȧ";
 
     return 0;

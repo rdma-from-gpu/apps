@@ -74,7 +74,7 @@ else ()
 endif ()
 message("rdma-core found at ${RDMA_CORE_HOME}")
 if ("$ENV{RDMA_SHIM_HOME}" STREQUAL "")
-    find_path(RDMA_SHIM_HOME ./rdma-shim/build/librdma_shim.a HINTS ./rdma-shim ../rdma-shim NOCACHE)
+    find_path(RDMA_SHIM_HOME ./rdma-shim/build/librdma-shim.a HINTS ./rdma-shim ../rdma-shim NOCACHE)
 else ()
     set(RDMA_SHIM_HOME $ENV{RDMA_SHIM_HOME})
 endif ()
@@ -129,14 +129,31 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 
-# utils.cpp should be compiled as library instead of being included like this...
-set(${COMMON_SRCS} utils.cpp)
+add_library(rdma-apps STATIC utils.cpp network.cpp generator-verbs.cu)
+set_target_properties(rdma-apps PROPERTIES
+    LANGUAGE CPP)
+
+target_include_directories(rdma-apps PUBLIC
+    ${RDMA_SHIM_INCLUDE}
+    ${RDMA_CORE_INCLUDE}
+    ${RDMA_CORE_INCLUDE_SRC} 
+    ${RDMA_CORE_INCLUDE_MLX5})
+
+target_link_libraries(rdma-apps
+    glog::glog
+    rdma-shim
+    mlx5
+    ibverbs)
+
+
 
 add_executable(generator generator.cu ${COMMON_SRCS})
 set_target_properties(generator PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
 target_link_libraries(generator 
-    # rdma_shim_cuda
-    # rdma_shim
+    # rdma-shim_cuda
+    rdma-apps
+    rdma-shim
+    rdma-shim-cuda
     glog::glog
     mlx5
     cuda

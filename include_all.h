@@ -21,7 +21,25 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <signal.h>
+#include <boost/program_options.hpp>
+#include <driver_types.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <infiniband/verbs.h>
+#include <unistd.h>
+#include <vector>
+#include <cuda_device_runtime_api.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
 
-using namespace std;
+
+
+
+#include <cuda_utils.cuh>
+extern "C" {
+#include <rdma_shim.h>
+}
+
+// using namespace std;
 
 #endif
