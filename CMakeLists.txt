@@ -74,7 +74,7 @@ else ()
 endif ()
 message("rdma-core found at ${RDMA_CORE_HOME}")
 if ("$ENV{RDMA_SHIM_HOME}" STREQUAL "")
-    find_path(RDMA_SHIM_HOME ./rdma-shim/build/librdma-shim.a HINTS ./rdma-shim ../rdma-shim NOCACHE)
+    find_path(RDMA_SHIM_HOME ./build/librdma-shim-cuda.a HINTS ./rdma-shim ../rdma-shim NOCACHE)
 else ()
     set(RDMA_SHIM_HOME $ENV{RDMA_SHIM_HOME})
 endif ()
@@ -129,7 +129,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 
-add_library(rdma-apps STATIC utils.cpp network.cpp generator-verbs.cu)
+add_library(rdma-apps STATIC network.cpp generator-verbs.cu)
 set_target_properties(rdma-apps PROPERTIES
     LANGUAGE CPP)
 
