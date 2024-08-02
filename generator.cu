@@ -232,8 +232,12 @@ int main(int argc, char **argv) {
     setup_custom_allocs(driver_data, driver_data_size);
 
     // Init rdma
+    // This is not portable, but allows to pick one local IP when we don't specify it in the command line
+    // THese are local IPs in our testbed, most likely they won't make any sense to you
+    // But if any of these is set in your machine in a port that **you don't want to use**, please remove it from here!
     std::vector<std::string> some_ips(
         {"192.168.128.1", "192.168.129.1", "192.168.130.1", "192.168.134.1", "192.168.200.34"});
+
     if (local_address != "")
     {
         some_ips.clear();
