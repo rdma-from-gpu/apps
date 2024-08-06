@@ -1,0 +1,41 @@
+syntax = "proto3";
+package rdma_from_gpu.proto;
+
+/* message slot_t { */
+/*   uint64 addr = 1; */
+/*   uint64 size = 2; */
+/* } */
+
+message ClientHello{
+  string address = 1;
+  uint32 port = 2;
+  uint64 qpnum = 3;
+
+  uint64 addr = 10;
+  uint64 rkey = 12;
+  uint64 length = 13;
+  
+  uint64 slots = 20;
+  bool rc = 30;
+}
+
+message WorkerHello {
+  string address = 1;
+  uint32 port = 2;
+  uint64 qpnum = 3;
+
+  uint64 addr = 10;
+  uint64 rkey = 12;
+  uint64 length = 13;
+
+  repeated uint64 slots = 20;
+  uint64 slot_size = 21;
+  uint64 client_id = 22;
+  uint64 input_size = 23;
+  uint64 output_size = 24;
+}
+
+service RDMAServer{
+  rpc Hello(ClientHello) returns (WorkerHello);
+}
+

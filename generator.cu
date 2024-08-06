@@ -1,26 +1,14 @@
-
 #include "include_all.h"
 #include "utils.h"
 #include "network.h"
 #include "rdma_shim.cuh"
 #define BUFFER_SIZE 100'000'000
 
-
-// #include "rdma.h"
-// #include "rdma_shim.cuh"
-// extern "C" {
-// #include "rdma_shim.h"
-// }
-// #include <cstdlib>
-// #include <cstring>
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <iostream>
-// #include <signal.h>
-//#include <infiniband/mlx5dv.h>
-//#include <device/pt-to-pt/utils_device.h>
-
 namespace po = boost::program_options;
+
+
+
+// Parameters we'll need later
 std::string mode;
 std::string mode_cqe;
 std::string remote_address;

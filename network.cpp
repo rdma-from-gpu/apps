@@ -59,7 +59,7 @@ int init_rdma(ibv_qp ** qp, ibv_pd ** pd, std::vector<std::string> ips, std::str
     qp_attrs->ah_attr.grh =
         (ibv_global_route){.dgid = *remote_gid,
                            .flow_label = 0x0,
-                           .sgid_index = gid_entry->gid_index,
+                           .sgid_index = (uint8_t) gid_entry->gid_index,
                            .hop_limit = 64,
                            .traffic_class = 0x0};
     qp_attrs->ah_attr.is_global = 1;

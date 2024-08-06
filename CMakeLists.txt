@@ -4,8 +4,9 @@ project(rdma_from_gpu)
 ## Find and setup CUDA at the very beginning
 ## TODO Use parameters
 set(ENV{CUDA_PATH} "/usr/local/cuda")
-#set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "75;80;89")
-set(CUDA_ARCHITECTURES "75")
+# TODO: USE ONLY CMD PARAMETERS
+set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "75;80;89")
+#set(CUDA_ARCHITECTURES "75")
 #find_package(CUDA)
 #find_package(CUDAToolkit)
 
@@ -27,7 +28,8 @@ else ()
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -fno-inline")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -lineinfo -g")
     else ()
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+        #set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -rdc=1")
     endif ()
 endif ()
 
@@ -105,6 +107,19 @@ find_package(absl CONFIG REQUIRED HINTS extern/grpc/install/lib/cmake/absl/ )
 find_package(Protobuf CONFIG REQUIRED HINTS extern/grpc/install/lib/cmake/protobuf)
 find_package(gRPC CONFIG REQUIRED HINTS extern/grpc/install)
 
+
+
+include(FetchContent)
+
+FetchContent_Declare(
+  readerwriterqueue
+  GIT_REPOSITORY    https://github.com/cameron314/readerwriterqueue
+  GIT_TAG           master
+)
+
+FetchContent_MakeAvailable(readerwriterqueue)
+
+
 set(RDMA_CORE_LIB ${RDMA_CORE_HOME}/build/lib)
 set(RDMA_CORE_INCLUDE ${RDMA_CORE_HOME}/build/include)
 set(RDMA_CORE_INCLUDE_MLX5 ${RDMA_CORE_HOME}/providers/mlx5/)
@@ -115,6 +130,7 @@ set(RDMA_SHIM_LIB ${RDMA_SHIM_HOME}/build/)
 link_directories(
     ${RDMA_CORE_LIB}
     ${RDMA_SHIM_LIB}
+    ${TVM_HOME}/build
 )
 
 
@@ -129,9 +145,53 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 
+
+
+
+get_filename_component(rdma_from_gpu_proto "rdma_from_gpu.proto" ABSOLUTE)
+get_filename_component(rdma_from_gpu_proto_path "${rdma_from_gpu_proto}" PATH)
+set(rdma_from_gpu_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/rdma_from_gpu.pb.cc")
+set(rdma_from_gpu_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/rdma_from_gpu.pb.h")
+set(rdma_from_gpu_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/rdma_from_gpu.grpc.pb.cc")
+set(rdma_from_gpu_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/rdma_from_gpu.grpc.pb.h")
+
+
+
+set(PROTOC ${CMAKE_SOURCE_DIR}/extern/grpc/install/bin/protoc)
+set(PROTOC_CPP ${CMAKE_SOURCE_DIR}/extern/grpc/install/bin/grpc_cpp_plugin)
+
+add_custom_command(
+        OUTPUT "${rdma_from_gpu_proto_srcs}" "${rdma_from_gpu_proto_hdrs}" "${rdma_from_gpu_grpc_srcs}" "${rdma_from_gpu_grpc_hdrs}"
+        COMMAND ${PROTOC}
+        ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+        -I "${rdma_from_gpu_proto_path}"
+        --plugin=protoc-gen-grpc="${PROTOC_CPP}"
+        "${rdma_from_gpu_proto}"
+        DEPENDS "${rdma_from_gpu_proto}"
+)
+add_library(
+        rdma_from_gpu_proto
+        ${rdma_from_gpu_grpc_srcs}
+        ${rdma_from_gpu_grpc_hdrs}
+        ${rdma_from_gpu_proto_srcs}
+        ${rdma_from_gpu_proto_hdrs}
+)
+
+
+target_link_libraries(
+        rdma_from_gpu_proto
+        gRPC::grpc++
+        )
+target_link_directories(rdma_from_gpu_proto
+        PUBLIC ${CMAKE_SOURCE_DIR}/extern/grpc/install/lib/ )
+
+
+
 add_library(rdma-apps STATIC network.cpp generator-verbs.cu)
 set_target_properties(rdma-apps PROPERTIES
-    LANGUAGE CPP)
+    LANGUAGE CPP
+    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
 
 target_include_directories(rdma-apps PUBLIC
     ${RDMA_SHIM_INCLUDE}
@@ -150,7 +210,6 @@ target_link_libraries(rdma-apps
 add_executable(generator generator.cu ${COMMON_SRCS})
 set_target_properties(generator PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
 target_link_libraries(generator 
-    # rdma-shim_cuda
     rdma-apps
     rdma-shim
     rdma-shim-cuda
@@ -165,4 +224,49 @@ target_include_directories(generator PUBLIC
     ${RDMA_CORE_INCLUDE}
     ${RDMA_SHIM_INCLUDE}
     ${RDMA_CORE_INCLUDE_MLX5})
+
+add_executable(worker worker.cu executor.cu worker_grpc.cpp ${COMMON_SRCS})
+set_target_properties(worker PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+target_link_libraries(worker 
+    rdma-apps
+    rdma-shim
+    rdma-shim-cuda
+    rdma_from_gpu_proto
+    glog::glog
+    mlx5
+    cuda
+    nvToolsExt
+    ${Boost_LIBRARIES}
+    gRPC::grpc++
+    tvm_runtime
+    readerwriterqueue
+   )
+
+target_include_directories(worker PUBLIC
+    glog::glog
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${RDMA_CORE_INCLUDE}
+    ${RDMA_SHIM_INCLUDE}
+    ${RDMA_CORE_INCLUDE_MLX5}
+    ${TVM_HOME}
+    ${TVM_HOME}/build
+    ${TVM_HOME}/3rdparty/dmlc-core/build
+    ${TVM_HOME}/3rdparty/dmlc-core/include
+    ${TVM_HOME}/3rdparty/dlpack/include
+    ${TVM_HOME}/src
+    ${TVM_HOME}/include
+    )
+
+
+# message("WORKER")
+# get_target_property(dirs worker INCLUDE_DIRECTORIES)
+# foreach(dir ${dirs})
+#   message(STATUS "dir='${dir}'")
+# endforeach()
+# message("GENERATOR")
+# get_target_property(dirs generator INCLUDE_DIRECTORIES)
+# foreach(dir ${dirs})
+#   message(STATUS "dir='${dir}'")
+# endforeach()
+
 
