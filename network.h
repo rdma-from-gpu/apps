@@ -69,4 +69,5 @@ int do_crafted_write(struct rdma_shim_data *data, int imm, void *buffer,
 
 int do_gpu_crafted_write(struct rdma_shim_data *data, int imm, void *buffer,
                          int size, int lkey, bool signaled = false, bool quiet = true);
+int post_recv(ibv_qp * qp);
 #endif

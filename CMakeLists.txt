@@ -257,6 +257,37 @@ target_include_directories(worker PUBLIC
     ${TVM_HOME}/include
     )
 
+add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS})
+set_target_properties(client PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+target_link_libraries(client
+    rdma-apps
+    rdma-shim
+    #rdma-shim-cuda
+    rdma_from_gpu_proto
+    glog::glog
+    ibverbs
+    #mlx5
+    #cuda
+    nvToolsExt
+    ${Boost_LIBRARIES}
+    gRPC::grpc++
+    #tvm_runtime
+    readerwriterqueue
+   )
+
+target_include_directories(client PUBLIC
+    glog::glog
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${RDMA_CORE_INCLUDE}
+    ${RDMA_SHIM_INCLUDE}
+    ${TVM_HOME}
+    ${TVM_HOME}/build
+    ${TVM_HOME}/3rdparty/dmlc-core/build
+    ${TVM_HOME}/3rdparty/dmlc-core/include
+    ${TVM_HOME}/3rdparty/dlpack/include
+    ${TVM_HOME}/src
+    ${TVM_HOME}/include
+    )
 
 # message("WORKER")
 # get_target_property(dirs worker INCLUDE_DIRECTORIES)
