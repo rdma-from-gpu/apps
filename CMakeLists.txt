@@ -4,13 +4,21 @@ project(rdma_from_gpu)
 ## Find and setup CUDA at the very beginning
 ## TODO Use parameters
 set(ENV{CUDA_PATH} "/usr/local/cuda")
-# TODO: USE ONLY CMD PARAMETERS
-set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "75;80;89")
-#set(CUDA_ARCHITECTURES "75")
-#find_package(CUDA)
-#find_package(CUDAToolkit)
 
-project(rdma_from_gpu LANGUAGES  C CXX CUDA)
+# We do this here so cmake doesn't complain (much)
+option(CUDA_ARCHITECTURES "CUDA architectures to pass to NVCC")
+if (CUDA_ARCHITECTURES)
+    set(CUDA_ARCHITECTURES ${CUDA_ARCHITECTURES})
+    set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "154")#${CUDA_ARCHITECTURES})
+else ()
+    set(CUDA_ARCHITECTURES "75;80;89")
+    set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "75;80;89")
+endif (CUDA_ARCHITECTURES)
+unset(CUDA_ARCHITECTURES CACHE)
+
+project(apps LANGUAGES  C CXX CUDA)
+set_property(GLOBAL PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+set(CUDA_SEPARABLE_COMPILATION ON)
 #set_property(GLOBAL PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fdiagnostics-color=auto")
@@ -27,6 +35,7 @@ else ()
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -fno-inline")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -lineinfo -g")
+        set(CMAKE_VERBOSE_MAKEFILE ON)
     else ()
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
         #set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -rdc=1")
@@ -188,27 +197,45 @@ target_link_directories(rdma_from_gpu_proto
 
 
 
-add_library(rdma-apps STATIC network.cpp generator-verbs.cu)
+# Ideally yhis shouldn't refer to tvm and readerwriterqueue
+# Since they are not used in all applications
+# TODO: Verify what we actually need here
+add_library(rdma-apps STATIC network.cpp verbs.cu)
 set_target_properties(rdma-apps PROPERTIES
     LANGUAGE CPP
-    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
+    # CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    #POSITION_INDEPENDENT_CODE ON
+    CUDA_SEPARABLE_COMPILATION ON)
 
 target_include_directories(rdma-apps PUBLIC
     ${RDMA_SHIM_INCLUDE}
     ${RDMA_CORE_INCLUDE}
     ${RDMA_CORE_INCLUDE_SRC} 
-    ${RDMA_CORE_INCLUDE_MLX5})
+    ${RDMA_CORE_INCLUDE_MLX5}
+    ${TVM_HOME}
+    ${TVM_HOME}/build
+    ${TVM_HOME}/3rdparty/dmlc-core/build
+    ${TVM_HOME}/3rdparty/dmlc-core/include
+    ${TVM_HOME}/3rdparty/dlpack/include
+    ${TVM_HOME}/src
+    ${TVM_HOME}/include)
 
 target_link_libraries(rdma-apps
     glog::glog
     rdma-shim
     mlx5
+    tvm_runtime
+    readerwriterqueue
     ibverbs)
 
 
 
 add_executable(generator generator.cu ${COMMON_SRCS})
-set_target_properties(generator PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+set_target_properties(generator PROPERTIES
+    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
+    CUDA_SEPARABLE_COMPILATION ON
+    )
 target_link_libraries(generator 
     rdma-apps
     rdma-shim
@@ -226,7 +253,10 @@ target_include_directories(generator PUBLIC
     ${RDMA_CORE_INCLUDE_MLX5})
 
 add_executable(worker worker.cu executor.cu worker_grpc.cpp ${COMMON_SRCS})
-set_target_properties(worker PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+set_target_properties(worker PROPERTIES
+    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
+    CUDA_SEPARABLE_COMPILATION ON
+    )
 target_link_libraries(worker 
     rdma-apps
     rdma-shim
@@ -267,7 +297,8 @@ target_link_libraries(client
     glog::glog
     ibverbs
     #mlx5
-    #cuda
+    cuda
+    cuda_runtime
     nvToolsExt
     ${Boost_LIBRARIES}
     gRPC::grpc++
@@ -299,5 +330,4 @@ target_include_directories(client PUBLIC
 # foreach(dir ${dirs})
 #   message(STATUS "dir='${dir}'")
 # endforeach()
-
 

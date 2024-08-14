@@ -92,19 +92,16 @@ __forceinline__ __device__ void _send_outputs(executor_data *data, request_t ** 
 
 
 
-        #pragma message "NO RDMA OP IS DONE IN EXECUTOR!!!!"
+        rdma_write_with_imm_cu(
+            data->data, local_output, data->output_size, data->lkey,
+            request->client_rkey, remote_output,
+            request->id, (data->clocks->runs % data->batch) == 0);
 
-        // rdma_write_with_imm_cu(
-        //     data->data, local_output, data->output_size, data->lkey,
-        //     request->client_rkey, remote_output,
-        //     request->id, (data->clocks->runs % data->batch) == 0);
-
-        // if ((data->clocks->runs % data->batch) == 0) {
-        //     // printf("Consume cqe: %li mod %li\n",
-        //     //         data->clocks->runs, data->batch);
-        //     consume_cqe_cu(data->data);
-        // }
-        #pragma message "JUST REMARKING IT: NO NETWORK OP IS DONE!"
+        if ((data->clocks->runs % data->batch) == 0) {
+            // printf("Consume cqe: %li mod %li\n",
+            //         data->clocks->runs, data->batch);
+            consume_cqe_cu(data->data);
+        }
 
         // Let's tell the wait_inputs "check the next one"
         // Otherwise we would start looking at the same element the first round
@@ -117,9 +114,6 @@ __forceinline__ __device__ void _send_outputs(executor_data *data, request_t ** 
 
 __global__
 void send_outputs(executor_data * data){_send_outputs(data, data->requests);}
-__global__
-void send_outputs_cpu(executor_data * data){_send_outputs(data, data->cpu_requests);}
-
 
 
 __global__ void swap_pointers(executor_data *data) {

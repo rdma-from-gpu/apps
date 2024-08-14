@@ -4,7 +4,6 @@
 #include "buffers.h"
 #include "executor.h"
 #include "rdma_shim.cuh"
-#include "generator-verbs.cu"
 #include "grpc.h"
 
 
@@ -271,6 +270,9 @@ __global__ void test_kernel(void * ptr)
     printf("PTR is %li\n", *ptr64);
     *ptr64=9999876;
 }
+
+
+
 
 int main(int argc, char **argv) {
     po::variables_map vm;

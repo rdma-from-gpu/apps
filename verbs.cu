@@ -70,3 +70,5 @@ int do_crafted_write(struct rdma_shim_data *data, int imm, void *buffer,
                            signaled);
     return 0;
 }
+
+

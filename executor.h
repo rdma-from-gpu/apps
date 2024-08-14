@@ -192,8 +192,8 @@ __device__
 void _send_outputs(executor_data * data, request_t ** requests);
 __global__
 void send_outputs(executor_data * data); //{_send_outputs(data, data->requests);}
-__global__
-void send_outputs_cpu(executor_data * data); //{_send_outputs(data, data->cpu_requests);}
+
+
 
 __global__ void looper(executor_data *data);
 
