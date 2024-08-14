@@ -319,50 +319,20 @@ target_include_directories(worker PUBLIC
     ${TVM_HOME}/include
     )
 
-# Client does not need to depend on cuda libs, but it's easier this way :/
-# This comes from the fact we are linking the rdma-apps lib, which depends on the
-# rdma-shim-cuda lib, with references to CUDA...
-# Client machines will need to have some cuda libs installed (likely), although they do not use the GPU
 add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS} client.cu)
 target_link_libraries(client
     rdma-apps
-    #rdma-shim
-    #rdma-shim-cuda
     rdma_from_gpu_proto
     glog::glog
     ibverbs
-    #mlx5
-    #cuda
     nvToolsExt
     ${Boost_LIBRARIES}
     gRPC::grpc++
-    #tvm_runtime
     readerwriterqueue
    )
 
 target_include_directories(client PUBLIC
     glog::glog
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${RDMA_CORE_INCLUDE}
-    ${RDMA_SHIM_INCLUDE}
-    ${RDMA_CORE_INCLUDE_MLX5}
-    ${TVM_HOME}
-    ${TVM_HOME}/build
-    ${TVM_HOME}/3rdparty/dmlc-core/build
-    ${TVM_HOME}/3rdparty/dmlc-core/include
-    ${TVM_HOME}/3rdparty/dlpack/include
-    ${TVM_HOME}/src
-    ${TVM_HOME}/include
     )
-
-# message("WORKER")
-# get_target_property(dirs worker INCLUDE_DIRECTORIES)
-# foreach(dir ${dirs})
-#   message(STATUS "dir='${dir}'")
-# endforeach()
-# message("GENERATOR")
-# get_target_property(dirs generator INCLUDE_DIRECTORIES)
-# foreach(dir ${dirs})
-#   message(STATUS "dir='${dir}'")
-# endforeach()
 
