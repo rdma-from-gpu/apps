@@ -2,25 +2,6 @@
 #include "rdma_shim.cuh"
 #include "network.h"
 
-void poll_cq_standard(ibv_cq *cq) {
-    struct ibv_wc wc[1];
-    int num_comp = ibv_poll_cq(cq, 1, wc);
-    // LOG(INFO) << "Polled " << num_comp;
-}
-
-int poll_single_cq_standard(ibv_cq *cq, ibv_wc * wc) {
-    int num_comp = ibv_poll_cq(cq, 1, wc);
-    if (num_comp)
-    {
-        //LOG(INFO) << "Polled wc with id " << wc->wr_id;
-    }
-    else
-    {
-        //LOG(DEBUG) << "Nothing to poll";
-    }
-    return num_comp == 0;
-}
-
 int do_standard_write(ibv_qp *qp, int imm, void *buffer, int size, int lkey,
                       bool signaled, bool quiet) {
     if (buffer != 0 && size != 0)

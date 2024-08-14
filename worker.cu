@@ -55,22 +55,25 @@ std::vector<void *> cpu_slots;
 std::thread *killer_thread_ptr;
 
 std::string get_default_modelzoo() {
-    // std::filesystem::path source_dir =
-    //     XSTRING(SOURCE_ROOT); // We define this in the CMake condig
-    // auto base = source_dir;
-    // // First time look in the compile folder, then in current folder. Or maybe
-    // // should we do the opposite?
-    // for (int j = 0; j < 2; j++) {
-    //     for (int i = 0; i < 5; i++) // Look up to 3 parents
-    //     {
-    //         if (std::filesystem::exists(base / "modelzoo"))
-    //             return std::string(base / "modelzoo");
-    //         else
-    //             base = base.parent_path();
-    //     }
-    //     base = std::filesystem::path(".");
-    // }
+    std::filesystem::path source_dir =
+        XSTRING(SOURCE_ROOT); // We define this in the CMake config
+    auto base = std::filesystem::absolute(source_dir);
+    // First time look in the compile folder, then in current folder. Or maybe
+    // should we do the opposite?
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 5; i++) // Look up to 5 parents
+        {
+            LOG(INFO) << "Searching for modelzoo in " << base;
+            if (std::filesystem::exists(base / "modelzoo"))
+                return std::string(base / "modelzoo");
+            else
+                base = base.parent_path();
+        }
+        base = std::filesystem::absolute(std::filesystem::path("."));
 
+    }
+
+    LOG(FATAL) << "No modelzoo folder found!";
     return ".";
 }
 
@@ -138,6 +141,7 @@ int arg_parse(int argc, char **argv, po::variables_map &vm) {
     }
 
     if (modelzoo == "") modelzoo = get_default_modelzoo();
+    LOG(INFO) << "Using modelzoo at " << modelzoo;
 
     if (copy_mode <0 || copy_mode > 2)
     {

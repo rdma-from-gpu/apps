@@ -93,6 +93,10 @@ message("rdma-shim found at ${RDMA_SHIM_HOME}")
 message("rdma-shim include found at ${RDMA_SHIM_INCLUDE}")
 
 
+# This is used on the worker to retrieve the modelzoo location
+add_compile_definitions("SOURCE_ROOT=${CMAKE_SOURCE_DIR}")
+
+
 #set(CUDA_ARCHITECTURES "75;80;89" CACHE STRING "CUDA architectures to pass to NVCC")
 set(CUDA_ARCHITECTURES ${CUDA_ARCHITECTURES} CACHE STRING "CUDA architectures to pass to NVCC")
 
@@ -200,7 +204,7 @@ target_link_directories(rdma_from_gpu_proto
 # Ideally yhis shouldn't refer to tvm and readerwriterqueue
 # Since they are not used in all applications
 # TODO: Verify what we actually need here
-add_library(rdma-apps STATIC network.cpp verbs.cu)
+add_library(rdma-apps STATIC network.cpp)
 set_target_properties(rdma-apps PROPERTIES
     LANGUAGE CPP
     CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
@@ -230,6 +234,34 @@ target_link_libraries(rdma-apps
     ibverbs)
 
 
+add_library(rdma-apps-cuda STATIC network.cpp verbs.cu)
+set_target_properties(rdma-apps-cuda PROPERTIES
+    LANGUAGE CPP
+    CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
+    # CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    #POSITION_INDEPENDENT_CODE ON
+    CUDA_SEPARABLE_COMPILATION ON)
+
+target_include_directories(rdma-apps-cuda PUBLIC
+    ${RDMA_SHIM_INCLUDE}
+    ${RDMA_CORE_INCLUDE}
+    ${RDMA_CORE_INCLUDE_SRC} 
+    ${RDMA_CORE_INCLUDE_MLX5}
+    ${TVM_HOME}
+    ${TVM_HOME}/build
+    ${TVM_HOME}/3rdparty/dmlc-core/build
+    ${TVM_HOME}/3rdparty/dmlc-core/include
+    ${TVM_HOME}/3rdparty/dlpack/include
+    ${TVM_HOME}/src
+    ${TVM_HOME}/include)
+
+target_link_libraries(rdma-apps-cuda
+    glog::glog
+    rdma-shim
+    mlx5
+    tvm_runtime
+    readerwriterqueue
+    ibverbs)
 
 add_executable(generator generator.cu ${COMMON_SRCS})
 set_target_properties(generator PROPERTIES
@@ -237,7 +269,7 @@ set_target_properties(generator PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     )
 target_link_libraries(generator 
-    rdma-apps
+    rdma-apps-cuda
     rdma-shim
     rdma-shim-cuda
     glog::glog
@@ -258,7 +290,7 @@ set_target_properties(worker PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     )
 target_link_libraries(worker 
-    rdma-apps
+    rdma-apps-cuda
     rdma-shim
     rdma-shim-cuda
     rdma_from_gpu_proto
@@ -287,18 +319,20 @@ target_include_directories(worker PUBLIC
     ${TVM_HOME}/include
     )
 
-add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS})
-set_target_properties(client PROPERTIES CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}")
+# Client does not need to depend on cuda libs, but it's easier this way :/
+# This comes from the fact we are linking the rdma-apps lib, which depends on the
+# rdma-shim-cuda lib, with references to CUDA...
+# Client machines will need to have some cuda libs installed (likely), although they do not use the GPU
+add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS} client.cu)
 target_link_libraries(client
     rdma-apps
-    rdma-shim
+    #rdma-shim
     #rdma-shim-cuda
     rdma_from_gpu_proto
     glog::glog
     ibverbs
     #mlx5
-    cuda
-    cuda_runtime
+    #cuda
     nvToolsExt
     ${Boost_LIBRARIES}
     gRPC::grpc++
@@ -311,6 +345,7 @@ target_include_directories(client PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
     ${RDMA_CORE_INCLUDE}
     ${RDMA_SHIM_INCLUDE}
+    ${RDMA_CORE_INCLUDE_MLX5}
     ${TVM_HOME}
     ${TVM_HOME}/build
     ${TVM_HOME}/3rdparty/dmlc-core/build
