@@ -156,6 +156,8 @@ int arg_parse(int argc, char **argv, po::variables_map &vm) {
 using namespace std;
 
 
+
+// These prepare the "slots" where the client could write
 int create_slots(void *start, uint64_t total_size, int n_slots,
                  int slot_size = 3 * 224 * 224 * 4, bool repeat = false,
                  bool gpu = true) {
@@ -270,9 +272,9 @@ std::thread self_killer() {
 
 __global__ void test_kernel(void * ptr)
 {
-    uint64_t* ptr64 = (uint64_t *) ptr;
-    printf("PTR is %li\n", *ptr64);
-    *ptr64=9999876;
+    // uint64_t* ptr64 = (uint64_t *) ptr;
+    // printf("PTR is %li\n", *ptr64);
+    // *ptr64=9999876;
 }
 
 

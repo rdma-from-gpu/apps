@@ -3,6 +3,8 @@
 #include <rdma_shim.h>
 
 
+// This files provides helpers to setup the RDMA stack
+
 int init_rdma(ibv_qp ** qp, ibv_pd ** pd, std::vector<std::string> ips, std::string remote_address, int dest_qp,
               ibv_qp_attr ** qp_attrs_ptr,
               ibv_qp_type type,
