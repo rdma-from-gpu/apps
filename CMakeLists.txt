@@ -319,7 +319,7 @@ target_include_directories(worker PUBLIC
     ${TVM_HOME}/include
     )
 
-add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS} client.cu)
+add_executable(client client.cpp client_grpc.cpp ${COMMON_SRCS})
 target_link_libraries(client
     rdma-apps
     rdma_from_gpu_proto
