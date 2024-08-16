@@ -1,3 +1,7 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13332379.svg)](https://doi.org/10.5281/zenodo.13332379)
+
+
+
 This folder contains a set of application to demonstrate the functionalities of our prototype.
 
 #Requirements
