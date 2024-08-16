@@ -16,3 +16,5 @@ extern/grpc
 extern/glog
 extern/gflags
 build-*
+.nfs*
+times.txt

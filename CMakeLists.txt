@@ -284,7 +284,7 @@ target_include_directories(generator PUBLIC
     ${RDMA_SHIM_INCLUDE}
     ${RDMA_CORE_INCLUDE_MLX5})
 
-add_executable(worker worker.cu executor.cu worker_grpc.cpp ${COMMON_SRCS})
+add_executable(worker worker.cu executor.cu worker_grpc.cpp parallel_profiler.cu ${COMMON_SRCS})
 set_target_properties(worker PROPERTIES
     CUDA_ARCHITECTURES "${CUDA_ARCHITECTURES}"
     CUDA_SEPARABLE_COMPILATION ON

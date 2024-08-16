@@ -644,9 +644,7 @@ int main(int argc, char **argv) {
     if (mode == "gpu-gpu" && profile > 1)
     {
         LOG(INFO) << "Profiling with the concurrent, pure, profiler";
-        //instantiate_model_pp(executor, max_inferences, profile_concurrency, profile > 2, profile > 3);
-        LOG(FATAL) << "Parallel profiler is disabled (for now!).";
-        exit(1);
+        instantiate_model_pp(executor, max_inferences, profile_concurrency, profile > 2, profile > 3);
 
     } else if (mode == "gpu-gpu" || profile)
     {
